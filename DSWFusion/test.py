@@ -49,8 +49,8 @@ for dataset_name in ["TNO"]:
 
 
             # Feature Interaction Extraction and Integration Process
-            feature_V_B, feature_V_D, feature_V, feature_V0 = Encoder(VI)
-            feature_I_B, feature_I_D, feature_I, feature_I0 = Encoder(IR)
+            feature_V_B, feature_V_D = Encoder(VI)
+            feature_I_B, feature_I_D = Encoder(IR)
             # Semantic Feature Enhancement Process
             feature_V_Dd = SFEM_S(feature_V_D)
             feature_I_bd = SFEM_S(feature_I_B)
