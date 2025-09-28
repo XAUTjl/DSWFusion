@@ -57,7 +57,7 @@ for dataset_name in ["TNO"]:
             feature_F_B = BaseFuseLayer(feature_I_bd + feature_V_B)
             feature_F_D = DetailFuseLayer(feature_I_D + feature_V_Dd)
             # Feature Fusion Process
-            FuseI, _ = Decoder(VI, feature_F_B, feature_F_D)
+            FuseI= Decoder(VI, feature_F_B, feature_F_D)
 
 
             FuseI = (FuseI - torch.min(FuseI)) / (torch.max(FuseI) - torch.min(FuseI))
