@@ -345,7 +345,7 @@ class DetailFeatureExtraction(nn.Module):
             z1, z2 = layer(z1, z2)
         return torch.cat((z1, z2), dim=1)
 
-class Encoder(nn.Module):
+class Encoder_WT(nn.Module):
     def __init__(self,
                  inp_channels=1,
                  out_channels=1,
@@ -356,7 +356,7 @@ class Encoder(nn.Module):
                  bias=False,
                  LayerNorm_type='WithBias',
                  ):
-        super(Encoder, self).__init__()
+        super(Encoder_WT, self).__init__()
 
         self.patch_embed = OverlapPatchEmbed(inp_channels, dim)
 
@@ -448,6 +448,91 @@ class Sep(nn.Module):
         x_out = self.DBB(x_out)
         x_out =self.conv1(x_out)
         x_out = self.sigmoid(x_out)
+        return x_out
+
+class res_block_1(nn.Module):                                                                                           #single residual conv block
+    def __init__(self, ch_in, ch_out):
+        super(res_block_1, self).__init__()
+        self.res = nn.Sequential(
+            nn.Conv2d(ch_in, ch_in, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.LeakyReLU(0.1, inplace=True),
+            nn.Conv2d(ch_in, ch_out, kernel_size=3, stride=1, padding=1, bias=False)
+        )
+
+    def forward(self, x):
+        res_x = self.res(x)
+        return res_x + x
+        
+class NeighborConnectionDecoder(nn.Module):
+    def __init__(self, channel):
+        super(NeighborConnectionDecoder, self).__init__()
+        self.upsample = nn.Upsample(scale_factor=1, mode='bilinear', align_corners=True)
+        self.conv_upsample1 = BasicConv2d(channel, channel, 3, padding=1)
+        self.conv_upsample2 = BasicConv2d(channel, channel, 3, padding=1)
+        self.conv_upsample3 = BasicConv2d(channel, channel, 3, padding=1)
+        self.conv_upsample4 = BasicConv2d(channel, channel, 3, padding=1)
+        self.conv_upsample5 = BasicConv2d(2*channel, 2*channel, 3, padding=1)
+
+        self.conv_concat2 = BasicConv2d(2*channel, 2*channel, 3, padding=1)
+        self.conv_concat3 = BasicConv2d(3*channel, 3*channel, 3, padding=1)
+        self.conv4 = BasicConv2d(3*channel, 3*channel, 3, padding=1)
+        self.conv5 = nn.Conv2d(3*channel, 64, 1)
+
+    def forward(self, x1, x2, x3):
+        x1_1 = x1
+        x2_1 = self.conv_upsample1(self.upsample(x1)) * x2
+        x3_1 = self.conv_upsample2(self.upsample(x2_1)) * self.conv_upsample3(self.upsample(x2)) * x3
+        x2_2 = torch.cat((x2_1, self.conv_upsample4(self.upsample(x1_1))), 1)
+        x2_2 = self.conv_concat2(x2_2)
+        x3_2 = torch.cat((x3_1, self.conv_upsample5(self.upsample(x2_2))), 1)
+        x3_2 = self.conv_concat3(x3_2)
+        x = self.conv4(x3_2)
+        x = self.conv5(x)
+        return x
+        
+class SFEM(nn.Module):
+    def __init__(self, ):
+        super(SFEM, self).__init__()
+        self.resnet_depth = ResNet18()
+
+        self.oneto3 = nn.Sequential(
+            nn.Conv2d(64, 3, kernel_size=3, stride=1, padding=1),
+        )
+
+        self.Pyramid2_11 = RFB_modified(64 * 2, 64)
+        self.Pyramid2_21 = RFB_modified(64 * 2, 64)
+        self.Pyramid2_31 = RFB_modified(64 * 2, 64)
+        self.NCD = NeighborConnectionDecoder(64)
+        self.R_Module = nn.Sequential(
+            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1),
+            nn.LeakyReLU(0.1, inplace=True),
+            nn.Conv2d(64, 64, kernel_size=1, stride=1, padding=0),
+            nn.LeakyReLU(0.1, inplace=True),
+            res_block_1(ch_in=64, ch_out=64),
+            res_block_1(ch_in=64, ch_out=64),
+            nn.Conv2d(64, 64, kernel_size=1, stride=1, padding=0),
+            nn.LeakyReLU(0.1, inplace=True),
+            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1),
+
+        )
+        self.convcat1 = nn.Conv2d(64 * 2, 64, kernel_size=1, stride=1, padding=0)
+        self.convcat2 = nn.Conv2d(64 * 3, 64 * 2, kernel_size=1, stride=1, padding=0)
+        self.convcat3 = nn.Conv2d(64 * 4, 64 * 3, kernel_size=1, stride=1, padding=0)
+
+    def forward(self, d):
+        d3 = self.oneto3(d)
+        d_cor = self.resnet_depth.conv1(d3)
+        d_cor = self.resnet_depth.bn1(d_cor)
+        d_cor = self.resnet_depth.relu(d_cor)
+        d_cor = self.resnet_depth.maxpool(d_cor)
+        d1 = self.resnet_depth.layer1(d_cor)
+        d2 = self.resnet_depth.layer2(d1)
+        d33 = self.resnet_depth.layer3(d2)
+        x_out1 = self.Pyramid2_11(torch.concat((d1,d),1))
+        x_out2 = self.Pyramid2_21(torch.concat((d2,d),1))
+        x_out3 = self.Pyramid2_31(torch.concat((d33,d),1))
+        x_out = self.NCD(x_out1, x_out2, x_out3)
+        x_out = self.R_Module(x_out)
         return x_out
 
 class CSDN_Tem(nn.Module):
