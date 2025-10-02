@@ -434,7 +434,7 @@ class Encoder_WT(nn.Module):
         detail_feature = self.detailFeature(x)
         return base_feature, detail_feature
 
-class Restormer_Decoder(nn.Module):
+class Decoder(nn.Module):
     def __init__(self,
                  inp_channels=1,
                  out_channels=1,
@@ -446,7 +446,7 @@ class Restormer_Decoder(nn.Module):
                  LayerNorm_type='WithBias',
                  ):
 
-        super(Restormer_Decoder, self).__init__()
+        super(Decoder, self).__init__()
         self.reduce_channel = nn.Conv2d(int(dim * 2), int(dim), kernel_size=1, bias=bias)
         self.encoder_level2 = nn.Sequential(
             *[TransformerBlock(dim=dim, num_heads=heads[1], ffn_expansion_factor=ffn_expansion_factor,
