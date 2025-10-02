@@ -333,7 +333,52 @@ class DetailNode(nn.Module):
         z2 = z2 + self.theta_phi(z1)
         z1 = z1 * torch.exp(self.theta_rho(z2)) + self.theta_eta(z2)
         return z1, z2
+def dwt_init(x):
+    x01 = x[:, :, 0::2, :] / 2
+    x02 = x[:, :, 1::2, :] / 2
+    x1 = x01[:, :, :, 0::2]
+    x2 = x02[:, :, :, 0::2]
+    x3 = x01[:, :, :, 1::2]
+    x4 = x02[:, :, :, 1::2]
+    x_LL = x1 + x2 + x3 + x4
+    x_HL = -x1 - x2 + x3 + x4
+    x_LH = -x1 + x2 - x3 + x4
+    x_HH = x1 - x2 - x3 + x4
 
+    return torch.cat((x_LL, x_HL, x_LH, x_HH), 1)
+def iwt_init(x):
+    r = 2
+    in_batch, in_channel, in_height, in_width = x.size()
+    out_batch, out_channel, out_height, out_width = in_batch, int(
+        in_channel / (r ** 2)), r * in_height, r * in_width
+    x1 = x[:, 0:out_channel, :, :] / 2
+    x2 = x[:, out_channel:out_channel * 2, :, :] / 2
+    x3 = x[:, out_channel * 2:out_channel * 3, :, :] / 2
+    x4 = x[:, out_channel * 3:out_channel * 4, :, :] / 2
+    h = torch.zeros([out_batch, out_channel, out_height, out_width]).float()
+    h[:, :, 0::2, 0::2] = x1 - x2 - x3 + x4
+    h[:, :, 1::2, 0::2] = x1 - x2 + x3 - x4
+    h[:, :, 0::2, 1::2] = x1 + x2 - x3 - x4
+    h[:, :, 1::2, 1::2] = x1 + x2 + x3 + x4
+
+    return h
+class DWT(nn.Module):
+    def __init__(self):
+        super(DWT, self).__init__()
+        # requires_grad = False
+        # 如果您想冻结部分模型并训练其余部分，可以将要冻结的参数的requires_grad
+        # 设置为False。
+        self.requires_grad = False
+
+    def forward(self, x):
+        return dwt_init(x)
+class IWT(nn.Module):
+    def __init__(self):
+        super(IWT, self).__init__()
+        self.requires_grad = False
+
+    def forward(self, x):
+        return iwt_init(x).cuda()
 class DetailFeatureExtraction(nn.Module):
     def __init__(self, num_layers=3):
         super(DetailFeatureExtraction, self).__init__()
@@ -421,6 +466,57 @@ class Restormer_Decoder(nn.Module):
             out_enc_level1 = self.sigmoid(out_enc_level1)
         return out_enc_level1, out_enc_level0
 
+def conv3x3(in_planes, out_planes, stride=1, groups=1, dilation=1):
+    """3x3 convolution with padding"""
+    return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride, padding=dilation, groups=groups, bias=False, dilation=dilation)
+
+class BasicBlock(nn.Module):
+    expansion = 1
+
+    def __init__(self, inplanes, planes, stride=1, downsample=None, groups=1,
+                 base_width=64, dilation=1, norm_layer=None):
+        super(BasicBlock, self).__init__()
+        if norm_layer is None:
+            norm_layer = BatchNorm2d
+        if groups != 1 or base_width != 64:
+            raise ValueError('BasicBlock only supports groups=1 and base_width=64')
+        if dilation > 1:
+            raise NotImplementedError("Dilation > 1 not supported in BasicBlock")
+        # Both self.conv1 and self.downsample layers downsample the input when stride != 1
+        self.conv1 = conv3x3(inplanes, planes, stride)
+        self.bn1 = norm_layer(planes, momentum=BN_MOMENTUM)
+        self.relu = nn.ReLU(inplace=relu_inplace)
+        self.conv2 = conv3x3(planes, planes)
+        self.bn2 = norm_layer(planes, momentum=BN_MOMENTUM)
+        self.downsample = downsample
+        self.stride = stride
+
+    def forward(self, x):
+        identity = x
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+        out = self.conv2(out)
+        # out = self.bn2(out)
+        if self.downsample is not None:
+            identity = self.downsample(x)
+        out = self.bn2(out) + identity
+        out = self.relu(out)
+        return out
+        
+class DoubleBasicBlock(nn.Module):
+    def __init__(self,):
+        super(DoubleBasicBlock, self).__init__()
+        
+        self.DBB = nn.Sequential(
+            BasicBlock(inplanes=64, planes=64),
+            BasicBlock(inplanes=64, planes=64)
+        )
+
+    def forward(self, x):
+        out = self.DBB(x)
+        return out
+
 class Sep(nn.Module):
     def __init__(self,
                  inp_channels=1,
@@ -450,7 +546,7 @@ class Sep(nn.Module):
         x_out = self.sigmoid(x_out)
         return x_out
 
-class res_block_1(nn.Module):                                                                                           #single residual conv block
+class res_block_1(nn.Module):                                                                                
     def __init__(self, ch_in, ch_out):
         super(res_block_1, self).__init__()
         self.res = nn.Sequential(
