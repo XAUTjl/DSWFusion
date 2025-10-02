@@ -404,7 +404,10 @@ class Encoder_WT(nn.Module):
         super(Encoder_WT, self).__init__()
 
         self.patch_embed = OverlapPatchEmbed(inp_channels, dim)
-
+        self.EDES = nn.Sequential(
+            CSDN_Tem(inp_channels, out_channels, kernel_size, stride, padding),
+            nn.LeakyReLU(inplace=True),
+        )
         self.encoder_level1 = nn.Sequential(
             *[TransformerBlock(dim=dim, num_heads=heads[0], ffn_expansion_factor=ffn_expansion_factor,
                                bias=bias, LayerNorm_type=LayerNorm_type) for i in range(num_blocks[0])])
@@ -423,6 +426,7 @@ class Encoder_WT(nn.Module):
         out_enc_level1 = self.encoder_level1(inp_enc_level1)
         x = self.dwt(inp_img)
         x = self.dwt(x)
+        x = self.EDES(x)     
         x = self.iwt(x)
         out_f_w = self.iwt(x)
         x = out_enc_level1 + out_f_w
