@@ -1,4 +1,4 @@
-from net import Encoder, Decoder, SFEM_S, BaseFeatureExtraction, DetailFeatureExtraction, Sep
+from net import Encoder_WT, Decoder, SFEM, BaseFeatureExtraction, DetailFeatureExtraction, Sep
 import os
 import numpy as np
 import torch
@@ -14,9 +14,9 @@ for dataset_name in ["TNO"]:
 
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    Encoder = nn.DataParallel(Encoder()).to(device)
+    Encoder = nn.DataParallel(Encoder_WT()).to(device)
     Decoder = nn.DataParallel(Decoder()).to(device)
-    SFEM_S = nn.DataParallel(SFEM_S()).to(device)
+    SFEM_S = nn.DataParallel(SFEM()).to(device)
     Sepnet = nn.DataParallel(Sep()).to(device)
     BaseFuseLayer = nn.DataParallel(BaseFeatureExtraction(dim=64, num_heads=8)).to(device)
     DetailFuseLayer = nn.DataParallel(DetailFeatureExtraction(num_layers=1)).to(device)
